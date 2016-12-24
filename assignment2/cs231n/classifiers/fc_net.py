@@ -246,38 +246,24 @@ class FullyConnectedNet(object):
     # self.bn_params[1] to the forward pass for the second batch normalization #
     # layer, etc.                                                              #
     ############################################################################
-    
-    # layer = {}
-    # layer[0] = X
-    # layer_cache = {}
-
-    # for i in xrange(1, self.num_layers):
-    #   layer[i], layer_cache[i] = affine_relu_forward(layer[i-1], 
-    #     self.params['W%d', i], self.params['b%d', i])
-    # WLast = 'W%d' % self.num_layers
-    # bLast = 'b%d' % self.num_layers
-
-    # scores, scores_cache = affine_forward(layer[self.num_layers-1], 
-    #   self.params[WLast], self.params[bLast])
 
     cache = {}
     out_forward = X
+
     for i in xrange(self.num_layers-1):
-      out_forward, cache['affine%d' % (i+1)] = affine_forward(out_forward, 
-        self.params['W%d' % (i+1)], self.params['b%d' % (i+1)])
-
       if self.use_batchnorm:
-        out_forward, cache['bn%d' % (i+1)] = batchnorm_forward(out_forward, 
-          self.params['gamma%d' % (i+1)], self.params['beta%d' % (i+1)])
-
-      # Relu
-      out_forward, cache['relu%d' %(i+1)] = relu_forward(out_forward)
+        out_forward, cache['affine%d' % (i+1)] = affine_forward(out_forward, 
+          self.params['W%d' % (i+1)], self.params['b%d' % (i+1)])
+        out_forward, cache['bn%d' % (i+1)] = batchnorm_forward(out_forward, self.params['gamma%d' % (i+1)], self.params['beta%d' % (i+1)], self.bn_params[i])
+        out_forward, cache['relu%d' %(i+1)] = relu_forward(out_forward)
+      else:
+        out_forward, cache['affine_relu%d' % (i+1)] = affine_relu_forward(out_forward, self.params['W%d' % (i+1)], self.params['b%d' % (i+1)])
 
       if self.use_dropout:
-        out_forward, cache['dropout%d' %(i+1)] = dropout_forward(out_forward, self.dropout_param)
+        out_forward, cache['dropout%d' % (i+1)] = dropout_forward(out_forward, self.dropout_param)
 
-    scores, cache['affine%d' % (self.num_layers)] = affine_forward(out_forward, 
-      self.params['W%d' % (self.num_layers)], self.params['b%d' % (self.num_layers)])
+    scores, cache['affine%d' % (self.num_layers)] = affine_forward(out_forward, self.params['W%d' % (self.num_layers)], self.params['b%d' % (self.num_layers)])
+
 
     ############################################################################
     #                             END OF YOUR CODE                             #
@@ -302,16 +288,23 @@ class FullyConnectedNet(object):
     # of 0.5 to simplify the expression for the gradient.                      #
     ############################################################################
     loss, dout = softmax_loss(scores, y)
+
     dout, grads['W%d' % self.num_layers], grads['b%d' % self.num_layers] = affine_backward(dout, cache['affine%d' % self.num_layers])
     for i in xrange(self.num_layers-2, -1, -1):
-      loss += 0.5 * self.reg * np.sum(np.power(self.params['W%d' % (i+1)], 2))
-      dout = relu_backward(dout, cache['relu%d' %(i+1)])
+        if self.use_dropout:
+          dout = dropout_backward(dout, cache['dropout%d' % (i+1)])
 
-      if self.use_batchnorm:
-        dout, grads['gamma%d' % (i+1)], grads['beta%d' % (i+1)] = batchnorm_backward(dout, cache['affine%d' % (i+1)])
-
-      dout, grads['W%d' % (i+1)], grads['b%d' % (i+1)] = affine_backward(dout, cache['affine%d' % (i+1)])
-      grads['W%d' % (i+1)] += self.reg * self.params['W%d' % (i+1)]
+        if self.use_batchnorm:
+          dout = relu_backward(dout, cache['relu%d' %(i+1)])
+          dout, dgamma, dbeta = batchnorm_backward(dout, cache['bn%d' % (i+1)])
+          dout, dw, db = affine_backward(dout, cache['affine%d' % (i+1)])
+          grads['gamma%d' % (i+1)], grads['beta%d' % (i+1)] = dgamma, dbeta
+          grads['b%d' % (i+1)] = db
+          grads['W%d' % (i+1)] = dw + self.reg * self.params['W%d' % (i+1)]
+        else:
+          dout, dw, db = affine_relu_backward(dout, cache['affine_relu%d' % (i+1)])
+          grads['b%d' % (i+1)] = db
+          grads['W%d' % (i+1)] = dw + self.reg * self.params['W%d' % (i+1)]
 
 
     ############################################################################
